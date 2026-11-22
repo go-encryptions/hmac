@@ -426,9 +426,9 @@ func TestUseAfterWipePanics(t *testing.T) {
 // failing marshals once, then refuses to marshal or to unmarshal.
 type failing struct {
 	hash.Hash
-	marshals  int
-	failAt    int // the 1-based MarshalBinary call that fails; 0 for none
-	failUn    bool
+	marshals int
+	failAt   int // the 1-based MarshalBinary call that fails; 0 for none
+	failUn   bool
 }
 
 func (f *failing) MarshalBinary() ([]byte, error) {
