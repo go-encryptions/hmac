@@ -427,7 +427,7 @@ func TestUseAfterWipePanics(t *testing.T) {
 type failing struct {
 	hash.Hash
 	marshals  int
-	failAfter int
+	failAt    int // the 1-based MarshalBinary call that fails; 0 for none
 	failUn    bool
 }
 
@@ -436,7 +436,7 @@ func (f *failing) MarshalBinary() ([]byte, error) {
 	// The state is valid even when the error is returned: only the error
 	// guard in New can refuse it, not a later unmarshal of garbage.
 	b, err := f.Hash.(interface{ MarshalBinary() ([]byte, error) }).MarshalBinary()
-	if f.marshals > f.failAfter {
+	if f.marshals == f.failAt {
 		return b, os.ErrInvalid
 	}
 	return b, err
@@ -456,17 +456,17 @@ func TestMarshalFailureFallsBack(t *testing.T) {
 	want := func() []byte { h := hmac.New(sha256.New, key); h.Write(msg); return h.Sum(nil) }()
 	// The first hash New asks for is the inner one, the second the outer.
 	for _, c := range []struct {
-		innerAfter, outerAfter int
-		failUn                 bool
-	}{{0, 9, false}, {1, 9, false}, {9, 0, false}, {9, 9, true}} {
+		innerAt, outerAt int
+		failUn           bool
+	}{{1, 0, false}, {2, 0, false}, {0, 1, false}, {0, 0, true}} {
 		calls := 0
 		m := New(func() hash.Hash {
 			calls++
-			after := c.innerAfter
+			at := c.innerAt
 			if calls == 2 {
-				after = c.outerAfter
+				at = c.outerAt
 			}
-			return &failing{Hash: sha256.New(), failAfter: after, failUn: c.failUn}
+			return &failing{Hash: sha256.New(), failAt: at, failUn: c.failUn}
 		}, key)
 		if m.Wipeable() {
 			t.Errorf("%+v: still wipeable", c)
