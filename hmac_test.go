@@ -14,6 +14,7 @@ import (
 	"hash"
 	mrand "math/rand/v2"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -291,6 +292,13 @@ func TestPBKDF2Errors(t *testing.T) {
 	if got, err := PBKDF2(sha1.New, nil, nil, 1, 0); err != nil || len(got) != 0 {
 		t.Fatal(got, err)
 	}
+	if strconv.IntSize == 64 {
+		// One byte above (2^32-1)*hLen, refused before anything is allocated.
+		over := uint64(20)*(1<<32-1) + 1 // a variable: a constant would not compile on 32-bit
+		if _, err := PBKDF2(sha1.New, nil, nil, 1, int(over)); err != ErrKeyLength {
+			t.Fatal(err)
+		}
+	}
 }
 
 func TestPBKDF2DifferentialStdlib(t *testing.T) {
@@ -425,10 +433,13 @@ type failing struct {
 
 func (f *failing) MarshalBinary() ([]byte, error) {
 	f.marshals++
+	// The state is valid even when the error is returned: only the error
+	// guard in New can refuse it, not a later unmarshal of garbage.
+	b, err := f.Hash.(interface{ MarshalBinary() ([]byte, error) }).MarshalBinary()
 	if f.marshals > f.failAfter {
-		return nil, os.ErrInvalid
+		return b, os.ErrInvalid
 	}
-	return f.Hash.(interface{ MarshalBinary() ([]byte, error) }).MarshalBinary()
+	return b, err
 }
 
 func (f *failing) UnmarshalBinary(b []byte) error {
@@ -457,12 +468,12 @@ func TestMarshalFailureFallsBack(t *testing.T) {
 			}
 			return &failing{Hash: sha256.New(), failAfter: after, failUn: c.failUn}
 		}, key)
+		if m.Wipeable() {
+			t.Errorf("%+v: still wipeable", c)
+		}
 		m.Write(msg)
 		if got := m.Sum(nil); !bytes.Equal(got, want) {
 			t.Errorf("%+v: %x", c, got)
-		}
-		if m.Wipeable() {
-			t.Errorf("%+v: still wipeable", c)
 		}
 		m.Wipe()
 	}
